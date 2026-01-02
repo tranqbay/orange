@@ -3,7 +3,6 @@ import type { LoaderFunctionArgs } from '@remix-run/cloudflare'
 import { json } from '@remix-run/cloudflare'
 import { useNavigate, useParams, useSearchParams } from '@remix-run/react'
 import { useObservableAsValue } from 'partytracks/react'
-import invariant from 'tiny-invariant'
 import { AudioIndicator } from '~/components/AudioIndicator'
 import { Button } from '~/components/Button'
 import { CameraButton } from '~/components/CameraButton'
@@ -18,12 +17,11 @@ import { Spinner } from '~/components/Spinner'
 import { Tooltip } from '~/components/Tooltip'
 import { useRoomContext } from '~/hooks/useRoomContext'
 import { useRoomUrl } from '~/hooks/useRoomUrl'
-import getUsername from '~/utils/getUsername.server'
 
-export const loader = async ({ request, context }: LoaderFunctionArgs) => {
-	const username = await getUsername(request)
-	invariant(username)
-	return json({ username, callsAppId: context.env.CALLS_APP_ID })
+export const loader = async ({ context }: LoaderFunctionArgs) => {
+	// Username comes from sessionStorage (set by TranqBay Lobby)
+	// or from JWT token validation in ChatRoom
+	return json({ callsAppId: context.env.CALLS_APP_ID })
 }
 
 let refreshCheckDone = false

@@ -38,12 +38,12 @@ import useStageManager from '~/hooks/useStageManager'
 import { useUserJoinLeaveToasts } from '~/hooks/useUserJoinLeaveToasts'
 import { useMeetingTimer } from '~/hooks/useMeetingTimer'
 import { dashboardLogsLink } from '~/utils/dashboardLogsLink'
-import getUsername from '~/utils/getUsername.server'
 import { getParticipantContext } from '~/utils/api.server'
 import isNonNullable from '~/utils/isNonNullable'
 
 export const loader = async ({ request, context }: LoaderFunctionArgs) => {
-	const username = await getUsername(request)
+	// Username comes from JWT token (stored in sessionStorage by Lobby)
+	// and validated by ChatRoom.onConnect()
 
 	// Get participantId from URL params to fetch booking info for meeting timer
 	const url = new URL(request.url)
@@ -56,7 +56,6 @@ export const loader = async ({ request, context }: LoaderFunctionArgs) => {
 	}
 
 	return json({
-		username,
 		meetingEndTime,
 		bugReportsEnabled: Boolean(
 			context.env.FEEDBACK_URL &&
@@ -65,7 +64,6 @@ export const loader = async ({ request, context }: LoaderFunctionArgs) => {
 		),
 		disableLobbyEnforcement: context.env.DISABLE_LOBBY_ENFORCEMENT === 'true',
 		mode: context.mode,
-		hasDb: Boolean(context.env.DB),
 		hasAiCredentials: Boolean(
 			context.env.OPENAI_API_TOKEN && context.env.OPENAI_MODEL_ENDPOINT
 		),
@@ -96,7 +94,7 @@ export default function Room() {
 }
 
 function JoinedRoom({ bugReportsEnabled }: { bugReportsEnabled: boolean }) {
-	const { hasDb, hasAiCredentials, dashboardDebugLogsBaseUrl, meetingEndTime } =
+	const { hasAiCredentials, dashboardDebugLogsBaseUrl, meetingEndTime } =
 		useLoaderData<typeof loader>()
 	const {
 		userMedia,
@@ -327,10 +325,7 @@ function JoinedRoom({ bugReportsEnabled }: { bugReportsEnabled: boolean }) {
 						className="hidden md:block"
 					></ParticipantsButton>
 					<OverflowMenu bugReportsEnabled={bugReportsEnabled} />
-					<LeaveRoomButton
-						navigateToFeedbackPage={hasDb}
-						meetingId={meetingId}
-					/>
+					<LeaveRoomButton meetingId={meetingId} />
 					{showDebugInfo && meetingId && (
 						<CopyButton contentValue={meetingId}>Meeting Id</CopyButton>
 					)}

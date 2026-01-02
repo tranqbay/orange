@@ -13,7 +13,6 @@ import {
 	ScrollRestoration,
 	useLoaderData,
 } from '@remix-run/react'
-import { parse } from 'cookie'
 import type { FC, ReactNode } from 'react'
 import { useRef } from 'react'
 import { useFullscreen, useToggle } from 'react-use'
@@ -21,90 +20,14 @@ import { useFullscreen, useToggle } from 'react-use'
 import { QueryClient, QueryClientProvider } from 'react-query'
 import tailwind from '~/styles/tailwind.css'
 import { elementNotContainedByClickTarget } from './utils/elementNotContainedByClickTarget'
-import getUsername from './utils/getUsername.server'
-import { safeRedirect } from './utils/safeReturnUrl'
 import { cn } from './utils/style'
 
-function addOneDay(date: Date): Date {
-	const result = new Date(date)
-	result.setTime(result.getTime() + 24 * 60 * 60 * 1000)
-	return result
-}
-
-// Check if a path should skip the username cookie check
-// TranqBay routes get identity from JWT token, not username cookie
-function shouldSkipUsernameCheck(pathname: string): boolean {
-	// Routes that don't need username (TranqBay flow)
-	const noUsernameRoutes = ['/', '/end', '/error']
-	if (noUsernameRoutes.includes(pathname)) return true
-
-	// Routes that use the old Orange username flow
-	const usernameRequiredRoutes = ['/set-username', '/new', '/call-quality-feedback']
-	if (usernameRequiredRoutes.includes(pathname)) return false
-
-	// Check if the first segment looks like a participant ID (UUID or alphanumeric code)
-	// These routes get identity from VIVI token
-	const firstSegment = pathname.split('/')[1]
-	if (!firstSegment) return false
-
-	// Match UUID pattern or alphanumeric session codes (participant IDs)
-	const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-	const sessionCodePattern = /^[a-zA-Z0-9_-]{8,}$/
-
-	return uuidPattern.test(firstSegment) || sessionCodePattern.test(firstSegment)
-}
-
-export const loader = async ({ request, context }: LoaderFunctionArgs) => {
-	const url = new URL(request.url)
-
-	// Skip username check for TranqBay routes (participant ID flow)
-	// These routes get their identity from the JWT token, not username cookie
-	if (shouldSkipUsernameCheck(url.pathname)) {
-		return json({
-			userDirectoryUrl: context.env.USER_DIRECTORY_URL,
-		})
-	}
-
-	// Only require username for old Orange routes (/new, /set-username, etc.)
-	const username = await getUsername(request)
-	if (!username && url.pathname !== '/set-username') {
-		const redirectUrl = new URL(url)
-		redirectUrl.pathname = '/set-username'
-		redirectUrl.searchParams.set('return-url', request.url)
-		throw safeRedirect(redirectUrl.toString())
-	}
-
-	const defaultResponse = json({
+export const loader = async ({ context }: LoaderFunctionArgs) => {
+	// TranqBay uses JWT token authentication, not username cookies
+	// Identity comes from the participant token in the session
+	return json({
 		userDirectoryUrl: context.env.USER_DIRECTORY_URL,
 	})
-
-	// we only care about verifying token freshness if request was a user
-	// initiated document request.
-	// https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Sec-Fetch-User
-	const secFetchUser = request.headers.get('Sec-Fetch-User')
-	if (secFetchUser !== '?1') return defaultResponse
-	const cookiesHeader = request.headers.get('Cookie')
-	if (!cookiesHeader) return defaultResponse
-	const { CF_Authorization } = parse(cookiesHeader)
-	if (!CF_Authorization) return defaultResponse
-
-	const [, payload] = CF_Authorization.split('.')
-	const data = JSON.parse(atob(payload))
-	const expires = new Date(data.exp * 1000)
-	const now = new Date()
-	if (addOneDay(now) > expires) {
-		const headers = new Headers()
-		;['CF_Authorization', 'CF_AppSession'].forEach((cookieName) =>
-			headers.append(
-				'Set-Cookie',
-				`${cookieName}=; Expires=${new Date(0).toUTCString()}; Path=/;`
-			)
-		)
-
-		throw safeRedirect(request.url, { headers })
-	}
-
-	return defaultResponse
 }
 
 export const meta: MetaFunction = () => [
