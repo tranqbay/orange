@@ -30,6 +30,15 @@ export type RoomState = {
 	}
 }
 
+// Chat message type
+export type ChatMessage = {
+	id: string
+	from: string
+	fromId: string
+	message: string
+	timestamp: number
+}
+
 export type ServerMessage =
 	| {
 			type: 'roomState'
@@ -57,6 +66,10 @@ export type ServerMessage =
 	| {
 			type: 'userLeftNotification'
 			id: string
+	  }
+	| {
+			type: 'chatMessage'
+			message: ChatMessage
 	  }
 
 export type ClientMessage =
@@ -105,4 +118,8 @@ export type ClientMessage =
 	| {
 			type: 'e2eeMlsMessage'
 			payload: string
+	  }
+	| {
+			type: 'chatMessage'
+			message: string
 	  }

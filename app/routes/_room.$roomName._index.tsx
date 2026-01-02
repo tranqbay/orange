@@ -68,7 +68,7 @@ export default function Lobby() {
 			<div className="space-y-4 w-96">
 				<div>
 					<h1 className="text-3xl font-bold">{roomName}</h1>
-					<p className="text-sm text-zinc-500 dark:text-zinc-400">
+					<p className="text-sm text-meet_text_2">
 						{`${joinedUsers} ${
 							joinedUsers === 1 ? 'user' : 'users'
 						} in the room.`}{' '}
@@ -82,7 +82,7 @@ export default function Lobby() {
 
 					<div className="absolute left-3 top-3">
 						{!sessionError && !session?.sessionId ? (
-							<Spinner className="text-zinc-100" />
+							<Spinner className="text-white" />
 						) : (
 							audioStreamTrack && (
 								<>
@@ -102,13 +102,13 @@ export default function Lobby() {
 					</div>
 				</div>
 				{sessionError && (
-					<div className="p-3 rounded-md text-sm text-zinc-800 bg-red-200 dark:text-zinc-200 dark:bg-red-700">
+					<div className="p-3 rounded-md text-sm text-meet_error_1 bg-meet_error_2">
 						{sessionError}
 					</div>
 				)}
 				{(userMedia.audioUnavailableReason ||
 					userMedia.videoUnavailableReason) && (
-					<div className="p-3 rounded-md text-sm text-zinc-800 bg-zinc-200 dark:text-zinc-200 dark:bg-zinc-700">
+					<div className="p-3 rounded-md text-sm text-meet_text_1 bg-meet_grey_6">
 						{userMedia.audioUnavailableReason === 'NotAllowedError' &&
 							userMedia.videoUnavailableReason === undefined && (
 								<p>Mic permission was denied.</p>

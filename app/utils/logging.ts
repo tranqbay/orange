@@ -14,6 +14,25 @@ export type LogEvent =
 			meetingId?: string
 			foundInStorage: boolean
 			connectionId: string
+			hasToken?: boolean
+			tokenValid?: boolean
+	  }
+	| {
+			eventName: 'tokenVerified'
+			roomName: string
+			displayName: string
+			userId: string
+			isOwner: boolean
+	  }
+	| {
+			eventName: 'tokenVerificationFailed'
+			roomName: string
+			connectionId: string
+	  }
+	| {
+			eventName: 'noAuthProvided'
+			roomName: string
+			connectionId: string
 	  }
 	| {
 			eventName: 'onClose'

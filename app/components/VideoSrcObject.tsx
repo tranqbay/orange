@@ -30,7 +30,7 @@ export const VideoSrcObject = forwardRef<HTMLVideoElement, VideoSrcObjectProps>(
 
 		return (
 			<video
-				className={cn('bg-zinc-700', className)}
+				className={cn('bg-meet_grey_5', className)}
 				ref={(v) => {
 					internalRef.current = v
 					if (ref === null) return

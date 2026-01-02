@@ -31,10 +31,36 @@ function addOneDay(date: Date): Date {
 	return result
 }
 
+// Check if a path looks like a participant ID (UUID or session code)
+function isParticipantPath(pathname: string): boolean {
+	// Skip root, set-username, and other known routes
+	const knownRoutes = ['/', '/set-username', '/new', '/error', '/end', '/call-quality-feedback']
+	if (knownRoutes.includes(pathname)) return false
+
+	// Check if the first segment looks like a participant ID (UUID or alphanumeric code)
+	const firstSegment = pathname.split('/')[1]
+	if (!firstSegment) return false
+
+	// Match UUID pattern or alphanumeric session codes
+	const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+	const sessionCodePattern = /^[a-zA-Z0-9_-]{8,}$/
+
+	return uuidPattern.test(firstSegment) || sessionCodePattern.test(firstSegment)
+}
+
 export const loader = async ({ request, context }: LoaderFunctionArgs) => {
 	const url = new URL(request.url)
+
+	// Skip username check for participant routes (session code flow)
+	// These routes get their identity from the VIVI token
+	if (isParticipantPath(url.pathname)) {
+		return json({
+			userDirectoryUrl: context.env.USER_DIRECTORY_URL,
+		})
+	}
+
 	const username = await getUsername(request)
-	if (!username && url.pathname !== '/set-username') {
+	if (!username && url.pathname !== '/set-username' && url.pathname !== '/') {
 		const redirectUrl = new URL(url)
 		redirectUrl.pathname = '/set-username'
 		redirectUrl.searchParams.set('return-url', request.url)
@@ -76,7 +102,11 @@ export const loader = async ({ request, context }: LoaderFunctionArgs) => {
 
 export const meta: MetaFunction = () => [
 	{
-		title: 'Orange Meets',
+		title: 'TranqBay Meet',
+	},
+	{
+		name: 'description',
+		content: 'Secure, HIPAA-compliant video sessions for healthcare. Join your appointment with no downloads required.',
 	},
 ]
 
@@ -107,7 +137,7 @@ export const links: LinksFunction = () => [
 	{
 		rel: 'mask-icon',
 		href: '/safari-pinned-tab.svg?v=orange-emoji',
-		color: '#faa339',
+		color: '#034732',
 	},
 	{
 		rel: 'shortcut icon',
@@ -128,17 +158,17 @@ const Document: FC<{ children?: ReactNode }> = ({ children }) => {
 			<head>
 				<meta charSet="utf-8" />
 				<meta name="viewport" content="width=device-width, initial-scale=1" />
-				<meta name="apple-mobile-web-app-title" content="Orange Meets" />
-				<meta name="application-name" content="Orange Meets" />
+				<meta name="apple-mobile-web-app-title" content="TranqBay Meet" />
+				<meta name="application-name" content="TranqBay Meet" />
 				<meta name="msapplication-TileColor" content="#ffffff" />
 				<meta
 					name="theme-color"
-					content="#ffffff"
+					content="#034732"
 					media="(prefers-color-scheme: light)"
 				/>
 				<meta
 					name="theme-color"
-					content="#232325"
+					content="#034732"
 					media="(prefers-color-scheme: dark)"
 				/>
 				<Meta />
@@ -147,10 +177,8 @@ const Document: FC<{ children?: ReactNode }> = ({ children }) => {
 			<body
 				className={cn(
 					'h-full',
-					'bg-white',
-					'text-zinc-800',
-					'dark:bg-zinc-800',
-					'dark:text-zinc-200'
+					'bg-meet_grey_5',
+					'text-meet_text_1'
 				)}
 				ref={fullscreenRef}
 				onDoubleClick={(e) => {

@@ -1,6 +1,6 @@
 name = "orange-meets"
 # https://developers.cloudflare.com/workers/platform/compatibility-dates
-compatibility_date = "2024-10-07"
+compatibility_date = "2024-12-01"
 main = "./build/index.js"
 compatibility_flags = ["nodejs_compat"]
 
@@ -9,6 +9,7 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 CALLS_APP_ID = "YOUR_CALLS_SFU_APP_ID_HERE"
+BACKEND_API_URL = "https://api.tranq.services"
 
 # Optional vars
 # OPENAI_MODEL_ENDPOINT = ""
@@ -24,7 +25,17 @@ new_classes = ["ChatRoom"]
 
 # The necessary secrets are:
 # - CALLS_APP_SECRET
-# To add secret, run `echo <VALUE> | wrangler secret put <NAME>`
+# - JWT_PUBLIC_KEY (RS256 public key from orange-api for token verification)
+#
+# To add secrets, run:
+#   echo <VALUE> | wrangler secret put <NAME>
+#
+# For JWT_PUBLIC_KEY, use the PEM format with escaped newlines:
+#   cat keys/public.pem | tr '\n' '\\n' | sed 's/\\n$//' | wrangler secret put JWT_PUBLIC_KEY
+#
+# Or set it as a single line:
+#   wrangler secret put JWT_PUBLIC_KEY
+#   (then paste the key with \n instead of newlines)
 
 # Optional secrets:
 # OPENAI_API_TOKEN = ""

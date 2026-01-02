@@ -2,8 +2,7 @@ import type { Env } from '~/types/Env'
 import type { ClientMessage, ServerMessage, User } from '~/types/Messages'
 import { assertError } from '~/utils/assertError'
 import assertNever from '~/utils/assertNever'
-import { assertNonNullable } from '~/utils/assertNonNullable'
-import getUsername from '~/utils/getUsername.server'
+import { verifyToken, extractTokenFromRequest, type JWTPayload } from '~/utils/jwt.server'
 
 import { eq, sql } from 'drizzle-orm'
 import type { DrizzleD1Database } from 'drizzle-orm/d1'
@@ -75,8 +74,55 @@ export class ChatRoom extends Server<Env> {
 			this.ctx.storage.setAlarm(Date.now() + alarmInterval)
 		}
 
-		const username = await getUsername(ctx.request)
-		assertNonNullable(username)
+		// Try to get username from JWT token first (preferred), fall back to cookie
+		let username: string
+		let tokenPayload: JWTPayload | null = null
+
+		const token = extractTokenFromRequest(ctx.request)
+		if (token) {
+			// Verify JWT token and validate room name
+			tokenPayload = await verifyToken(token, this.env, {
+				expectedRoomName: this.name,
+			})
+
+			if (tokenPayload) {
+				// Use displayName from token
+				username = tokenPayload.displayName
+				log({
+					eventName: 'tokenVerified',
+					roomName: this.name,
+					displayName: tokenPayload.displayName,
+					userId: tokenPayload.userId,
+					isOwner: tokenPayload.isOwner,
+				})
+			} else {
+				// Token verification failed - reject connection
+				log({
+					eventName: 'tokenVerificationFailed',
+					roomName: this.name,
+					connectionId: connection.id,
+				})
+				this.sendMessage(connection, {
+					type: 'error',
+					error: 'Invalid or expired token. Please refresh the page and try again.',
+				})
+				connection.close(4001, 'Token verification failed')
+				return
+			}
+		} else {
+			// No token provided - reject connection
+			log({
+				eventName: 'noAuthProvided',
+				roomName: this.name,
+				connectionId: connection.id,
+			})
+			this.sendMessage(connection, {
+				type: 'error',
+				error: 'Authentication required. Please join through the proper meeting link.',
+			})
+			connection.close(4001, 'No authentication token provided')
+			return
+		}
 
 		let user = await this.ctx.storage.get<User>(`session-${connection.id}`)
 		const foundInStorage = user !== undefined
@@ -94,6 +140,9 @@ export class ChatRoom extends Server<Env> {
 					screenShareEnabled: false,
 				},
 			}
+		} else if (tokenPayload && user) {
+			// Update name from token even if user was in storage
+			user.name = username
 		}
 
 		// store the user's data in storage
@@ -107,6 +156,8 @@ export class ChatRoom extends Server<Env> {
 			meetingId,
 			foundInStorage,
 			connectionId: connection.id,
+			hasToken: !!token,
+			tokenValid: !!tokenPayload,
 		})
 	}
 
@@ -381,6 +432,25 @@ export class ChatRoom extends Server<Env> {
 				case 'e2eeMlsMessage': {
 					// forward as-is
 					this.broadcastMessage(data, connection)
+					break
+				}
+				case 'chatMessage': {
+					const fromUser = await this.ctx.storage.get<User>(
+						`session-${connection.id}`
+					)
+					if (fromUser) {
+						const chatMessage = {
+							id: crypto.randomUUID(),
+							from: fromUser.name,
+							fromId: connection.id,
+							message: data.message,
+							timestamp: Date.now(),
+						}
+						this.broadcastMessage({
+							type: 'chatMessage',
+							message: chatMessage,
+						})
+					}
 					break
 				}
 				case 'heartbeat': {

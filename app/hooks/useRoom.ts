@@ -1,8 +1,31 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ClientMessage, RoomState, ServerMessage } from '~/types/Messages'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ChatMessage, ClientMessage, RoomState, ServerMessage } from '~/types/Messages'
 
 import usePartySocket from 'partysocket/react'
 import type { UserMedia } from './useUserMedia'
+
+// Participant data stored in session storage
+interface ParticipantData {
+	token: string
+	participantIdentifier: string
+	participantType: string
+	displayName: string
+	roomName: string
+	meetingStartTime?: string
+	meetingEndTime?: string
+	timestamp: number
+}
+
+// Get participant data from session storage
+function getParticipantData(): ParticipantData | null {
+	try {
+		const stored = sessionStorage.getItem('participantData')
+		if (!stored) return null
+		return JSON.parse(stored) as ParticipantData
+	} catch {
+		return null
+	}
+}
 
 export default function useRoom({
 	roomName,
@@ -15,6 +38,7 @@ export default function useRoom({
 		users: [],
 		ai: { enabled: false },
 	})
+	const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
 
 	const userLeftFunctionRef = useRef(() => {})
 
@@ -22,9 +46,14 @@ export default function useRoom({
 		return () => userLeftFunctionRef.current()
 	}, [])
 
+	// Get participant data including JWT token
+	const participantData = useMemo(() => getParticipantData(), [])
+
 	const websocket = usePartySocket({
 		party: 'rooms',
 		room: roomName,
+		// Pass token as query parameter for server-side validation
+		query: participantData?.token ? { token: participantData.token } : undefined,
 		onMessage: (e) => {
 			const message = JSON.parse(e.data) as ServerMessage
 			switch (message.type) {
@@ -46,6 +75,9 @@ export default function useRoom({
 				case 'e2eeMlsMessage':
 				case 'userLeftNotification':
 					// do nothing
+					break
+				case 'chatMessage':
+					setChatMessages((prev) => [...prev, message.message])
 					break
 				default:
 					message satisfies never
@@ -88,5 +120,14 @@ export default function useRoom({
 		[roomState.users, websocket.id]
 	)
 
-	return { identity, otherUsers, websocket, roomState }
+	const sendChatMessage = useCallback(
+		(message: string) => {
+			websocket.send(
+				JSON.stringify({ type: 'chatMessage', message } satisfies ClientMessage)
+			)
+		},
+		[websocket]
+	)
+
+	return { identity, otherUsers, websocket, roomState, chatMessages, sendChatMessage }
 }

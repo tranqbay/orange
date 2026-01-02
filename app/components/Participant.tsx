@@ -167,7 +167,7 @@ export const Participant = forwardRef<
 										/>
 									</div>
 								) : (
-									<span className="relative grid w-full h-full uppercase rounded-full place-items-center bg-zinc-500">
+									<span className="relative grid w-full h-full uppercase rounded-full place-items-center bg-meet_primary_1">
 										{isSpeaking && (
 											<AudioGlow
 												type="text"
@@ -204,7 +204,7 @@ export const Participant = forwardRef<
 						</div>
 					)}
 					<HoverFade className="absolute inset-0 grid w-full h-full place-items-center">
-						<div className="flex gap-2 p-2 rounded bg-zinc-900/30">
+						<div className="flex gap-2 p-2 rounded bg-meet_grey_5/50">
 							<Tooltip content={pinned ? 'Restore' : 'Maximize'}>
 								<Button
 									onClick={() =>

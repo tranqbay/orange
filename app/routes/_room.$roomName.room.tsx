@@ -6,13 +6,18 @@ import {
 	useParams,
 	useSearchParams,
 } from '@remix-run/react'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useMount, useWindowSize } from 'react-use'
 import { AiButton } from '~/components/AiButton'
 import { ButtonLink } from '~/components/Button'
 import { CameraButton } from '~/components/CameraButton'
+import Chat from '~/components/Chat'
+import { ChatButton } from '~/components/ChatButton'
 import { CopyButton } from '~/components/CopyButton'
+import ViewToggle, { type ViewMode } from '~/components/ViewToggle'
 import { HighPacketLossWarningsToast } from '~/components/HighPacketLossWarningsToast'
+import ReconnectingOverlay from '~/components/ReconnectingOverlay'
+import MeetingTimer from '~/components/MeetingTimer'
 import { IceDisconnectedToast } from '~/components/IceDisconnectedToast'
 import { LeaveRoomButton } from '~/components/LeaveRoomButton'
 import { MicButton } from '~/components/MicButton'
@@ -31,15 +36,28 @@ import { useShowDebugInfoShortcut } from '~/hooks/useShowDebugInfoShortcut'
 import useSounds from '~/hooks/useSounds'
 import useStageManager from '~/hooks/useStageManager'
 import { useUserJoinLeaveToasts } from '~/hooks/useUserJoinLeaveToasts'
+import { useMeetingTimer } from '~/hooks/useMeetingTimer'
 import { dashboardLogsLink } from '~/utils/dashboardLogsLink'
 import getUsername from '~/utils/getUsername.server'
+import { getParticipantContext } from '~/utils/api.server'
 import isNonNullable from '~/utils/isNonNullable'
 
 export const loader = async ({ request, context }: LoaderFunctionArgs) => {
 	const username = await getUsername(request)
 
+	// Get participantId from URL params to fetch booking info for meeting timer
+	const url = new URL(request.url)
+	const participantId = url.searchParams.get('participantId')
+
+	let meetingEndTime: string | null = null
+	if (participantId) {
+		const { booking } = await getParticipantContext(participantId, context)
+		meetingEndTime = booking?.appointmentEndTime || null
+	}
+
 	return json({
 		username,
+		meetingEndTime,
 		bugReportsEnabled: Boolean(
 			context.env.FEEDBACK_URL &&
 				context.env.FEEDBACK_QUEUE &&
@@ -78,7 +96,7 @@ export default function Room() {
 }
 
 function JoinedRoom({ bugReportsEnabled }: { bugReportsEnabled: boolean }) {
-	const { hasDb, hasAiCredentials, dashboardDebugLogsBaseUrl } =
+	const { hasDb, hasAiCredentials, dashboardDebugLogsBaseUrl, meetingEndTime } =
 		useLoaderData<typeof loader>()
 	const {
 		userMedia,
@@ -89,13 +107,67 @@ function JoinedRoom({ bugReportsEnabled }: { bugReportsEnabled: boolean }) {
 		room,
 		e2eeSafetyNumber,
 		e2eeOnJoin,
+		iceConnectionState,
 	} = useRoomContext()
+
+	// Meeting timer
+	const {
+		timeLeft,
+		warningLevel,
+		showWarning,
+		dismissWarning,
+	} = useMeetingTimer(meetingEndTime)
+
+	// Reconnection state
+	const [reconnectAttempts, setReconnectAttempts] = useState(0)
+	const maxReconnectAttempts = 5
+	const isReconnecting = iceConnectionState === 'disconnected' || iceConnectionState === 'failed'
+
+	// Track reconnection attempts
+	useEffect(() => {
+		if (isReconnecting) {
+			const interval = setInterval(() => {
+				setReconnectAttempts((prev) => Math.min(prev + 1, maxReconnectAttempts))
+			}, 3000)
+			return () => clearInterval(interval)
+		} else {
+			setReconnectAttempts(0)
+		}
+	}, [isReconnecting])
 	const {
 		otherUsers,
 		websocket,
 		identity,
 		roomState: { meetingId },
+		chatMessages,
+		sendChatMessage,
 	} = room
+
+	// Chat state
+	const [showChat, setShowChat] = useState(false)
+	const [lastReadCount, setLastReadCount] = useState(0)
+
+	const toggleChat = useCallback(() => {
+		setShowChat((prev) => {
+			if (!prev) {
+				// Opening chat - mark all messages as read
+				setLastReadCount(chatMessages.length)
+			}
+			return !prev
+		})
+	}, [chatMessages.length])
+
+	// Update last read count when chat is open and new messages arrive
+	useEffect(() => {
+		if (showChat) {
+			setLastReadCount(chatMessages.length)
+		}
+	}, [showChat, chatMessages.length])
+
+	const unreadCount = showChat ? 0 : chatMessages.length - lastReadCount
+
+	// View mode state
+	const [viewMode, setViewMode] = useState<ViewMode>('grid')
 
 	// only want this evaluated once upon mounting
 	const [firstUser] = useState(otherUsers.length === 0)
@@ -129,11 +201,12 @@ function JoinedRoom({ bugReportsEnabled }: { bugReportsEnabled: boolean }) {
 	useUserJoinLeaveToasts(otherUsers)
 
 	const { width } = useWindowSize()
+	const isMobile = width < 600
 
 	const someScreenshare =
 		otherUsers.some((u) => u.tracks.screenShareEnabled) ||
 		Boolean(identity?.tracks.screenShareEnabled)
-	const stageLimit = width < 600 ? 2 : someScreenshare ? 5 : 9
+	const stageLimit = isMobile ? 2 : someScreenshare ? 5 : 9
 
 	const { recordActivity, actorsOnStage } = useStageManager(
 		otherUsers,
@@ -152,6 +225,14 @@ function JoinedRoom({ bugReportsEnabled }: { bugReportsEnabled: boolean }) {
 		(u) => !pinnedTileIds.includes(u.id)
 	)
 
+	// For speaker view, determine main speaker and sidebar participants
+	const mainSpeaker = viewMode === 'speaker'
+		? actorsOnStage.find((u) => u.speaking) || actorsOnStage[0]
+		: null
+	const sidebarParticipants = viewMode === 'speaker' && mainSpeaker
+		? actorsOnStage.filter((u) => u.id !== mainSpeaker.id)
+		: []
+
 	const gridGap = 12
 	const dispatchToast = useDispatchToast()
 
@@ -168,32 +249,65 @@ function JoinedRoom({ bugReportsEnabled }: { bugReportsEnabled: boolean }) {
 		<PullAudioTracks
 			audioTracks={otherUsers.map((u) => u.tracks.audio).filter(isNonNullable)}
 		>
-			<div className="flex flex-col h-full bg-white dark:bg-zinc-800">
-				<div className="relative flex-grow bg-black isolate">
+			<div className="flex flex-col h-screen bg-meet_grey_5">
+				<ViewToggle
+					view={viewMode}
+					onViewChange={setViewMode}
+					participantCount={otherUsers.length + 1}
+					isMobile={width < 600}
+				/>
+				<div className="relative flex-grow bg-meet_grey_5 isolate">
 					<div
 						style={{ '--gap': gridGap + 'px' } as any}
 						className="absolute inset-0 flex isolate p-[--gap] gap-[--gap]"
 					>
-						{pinnedActors.length > 0 && (
-							<div className="flex-grow-[5] overflow-hidden relative">
-								<ParticipantLayout
-									users={pinnedActors.filter(isNonNullable)}
-									gap={gridGap}
-									aspectRatio="16:9"
-								/>
-							</div>
+						{viewMode === 'speaker' && mainSpeaker ? (
+							<>
+								{/* Speaker view: main speaker large, others in sidebar */}
+								<div className="flex-grow-[4] overflow-hidden relative">
+									<ParticipantLayout
+										users={[mainSpeaker].filter(isNonNullable)}
+										gap={gridGap}
+										aspectRatio="16:9"
+									/>
+								</div>
+								{sidebarParticipants.length > 0 && (
+									<div className="w-48 md:w-64 overflow-hidden relative flex flex-col gap-[--gap]">
+										<ParticipantLayout
+											users={sidebarParticipants.filter(isNonNullable)}
+											gap={gridGap}
+											aspectRatio="4:3"
+										/>
+									</div>
+								)}
+							</>
+						) : (
+							<>
+								{/* Grid view: all participants equal */}
+								{pinnedActors.length > 0 && (
+									<div className="flex-grow-[5] overflow-hidden relative">
+										<ParticipantLayout
+											users={pinnedActors.filter(isNonNullable)}
+											gap={gridGap}
+											aspectRatio="16:9"
+										/>
+									</div>
+								)}
+								<div className="flex-grow overflow-hidden relative">
+									<ParticipantLayout
+										users={unpinnedActors.filter(isNonNullable)}
+										gap={gridGap}
+										aspectRatio="4:3"
+									/>
+								</div>
+							</>
 						)}
-						<div className="flex-grow overflow-hidden relative">
-							<ParticipantLayout
-								users={unpinnedActors.filter(isNonNullable)}
-								gap={gridGap}
-								aspectRatio="4:3"
-							/>
-						</div>
 					</div>
 					<Toast.Viewport className="absolute bottom-0 right-0" />
 				</div>
-				<div className="flex flex-wrap items-center justify-center gap-2 p-2 text-sm md:gap-4 md:p-5 md:text-base">
+				{/* Bottom control bar - matching Meet's Tray styling */}
+				<div className="flex-shrink-0 z-50 bg-white/95 backdrop-blur-md border-t border-meet_grey_6 shadow-lg">
+					<div className="flex items-center justify-center gap-3 px-4 py-3">
 					{hasAiCredentials && <AiButton recordActivity={recordActivity} />}
 					<MicButton warnWhenSpeakingWhileMuted />
 					<CameraButton />
@@ -201,6 +315,11 @@ function JoinedRoom({ bugReportsEnabled }: { bugReportsEnabled: boolean }) {
 					<RaiseHandButton
 						raisedHand={raisedHand}
 						onClick={() => setRaisedHand(!raisedHand)}
+					/>
+					<ChatButton
+						showChat={showChat}
+						toggleChat={toggleChat}
+						unreadCount={unreadCount}
 					/>
 					<ParticipantsButton
 						identity={identity}
@@ -234,10 +353,31 @@ function JoinedRoom({ bugReportsEnabled }: { bugReportsEnabled: boolean }) {
 							Meeting Logs
 						</ButtonLink>
 					)}
+					</div>
 				</div>
 			</div>
 			<HighPacketLossWarningsToast />
-			<IceDisconnectedToast />
+			{showWarning && (
+				<MeetingTimer
+					warningLevel={warningLevel}
+					timeLeft={timeLeft}
+					onDismiss={dismissWarning}
+					isMobile={isMobile}
+				/>
+			)}
+			{isReconnecting && (
+				<ReconnectingOverlay
+					attemptNumber={reconnectAttempts}
+					maxAttempts={maxReconnectAttempts}
+				/>
+			)}
+			<Chat
+				showChat={showChat}
+				toggleChat={toggleChat}
+				messages={chatMessages}
+				onSendMessage={sendChatMessage}
+				currentUserId={websocket.id}
+			/>
 		</PullAudioTracks>
 	)
 }

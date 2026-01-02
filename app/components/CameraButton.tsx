@@ -54,6 +54,7 @@ export const CameraButton: FC<ButtonProps> = ({ onClick, ...rest }) => {
 					toggle()
 					onClick && onClick(e)
 				}}
+				className="w-12 h-12 rounded-full shadow-sm"
 				{...rest}
 			>
 				<VisuallyHidden>

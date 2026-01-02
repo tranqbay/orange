@@ -3,6 +3,8 @@ export type Env = {
 	CALLS_APP_ID: string
 	CALLS_APP_SECRET: string
 	CALLS_API_URL?: string
+	BACKEND_API_URL?: string
+	JWT_PUBLIC_KEY?: string // RS256 public key for token verification (PEM format)
 	DISABLE_LOBBY_ENFORCEMENT?: string
 	E2EE_ENABLED?: string
 	USER_DIRECTORY_URL?: string

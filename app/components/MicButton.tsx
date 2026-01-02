@@ -59,6 +59,7 @@ export const MicButton: FC<
 						toggle()
 						onClick && onClick(e)
 					}}
+					className="w-12 h-12 rounded-full shadow-sm"
 					{...rest}
 				>
 					<VisuallyHidden>
