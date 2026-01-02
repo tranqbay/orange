@@ -31,17 +31,23 @@ function addOneDay(date: Date): Date {
 	return result
 }
 
-// Check if a path looks like a participant ID (UUID or session code)
-function isParticipantPath(pathname: string): boolean {
-	// Skip root, set-username, and other known routes
-	const knownRoutes = ['/', '/set-username', '/new', '/error', '/end', '/call-quality-feedback']
-	if (knownRoutes.includes(pathname)) return false
+// Check if a path should skip the username cookie check
+// TranqBay routes get identity from JWT token, not username cookie
+function shouldSkipUsernameCheck(pathname: string): boolean {
+	// Routes that don't need username (TranqBay flow)
+	const noUsernameRoutes = ['/', '/end', '/error']
+	if (noUsernameRoutes.includes(pathname)) return true
+
+	// Routes that use the old Orange username flow
+	const usernameRequiredRoutes = ['/set-username', '/new', '/call-quality-feedback']
+	if (usernameRequiredRoutes.includes(pathname)) return false
 
 	// Check if the first segment looks like a participant ID (UUID or alphanumeric code)
+	// These routes get identity from VIVI token
 	const firstSegment = pathname.split('/')[1]
 	if (!firstSegment) return false
 
-	// Match UUID pattern or alphanumeric session codes
+	// Match UUID pattern or alphanumeric session codes (participant IDs)
 	const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 	const sessionCodePattern = /^[a-zA-Z0-9_-]{8,}$/
 
@@ -51,16 +57,17 @@ function isParticipantPath(pathname: string): boolean {
 export const loader = async ({ request, context }: LoaderFunctionArgs) => {
 	const url = new URL(request.url)
 
-	// Skip username check for participant routes (session code flow)
-	// These routes get their identity from the VIVI token
-	if (isParticipantPath(url.pathname)) {
+	// Skip username check for TranqBay routes (participant ID flow)
+	// These routes get their identity from the JWT token, not username cookie
+	if (shouldSkipUsernameCheck(url.pathname)) {
 		return json({
 			userDirectoryUrl: context.env.USER_DIRECTORY_URL,
 		})
 	}
 
+	// Only require username for old Orange routes (/new, /set-username, etc.)
 	const username = await getUsername(request)
-	if (!username && url.pathname !== '/set-username' && url.pathname !== '/') {
+	if (!username && url.pathname !== '/set-username') {
 		const redirectUrl = new URL(url)
 		redirectUrl.pathname = '/set-username'
 		redirectUrl.searchParams.set('return-url', request.url)
